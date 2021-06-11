@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # execsnoop - trace process exec() with arguments.
 #             Written using Linux ftrace.
@@ -60,7 +60,7 @@ opt_duration=0; duration=; opt_name=0; name=; opt_time=0; opt_reexec=0
 opt_argc=0; argc=8; max_argc=16; ftext=
 trap ':' INT QUIT TERM PIPE HUP	# sends execution to end tracing section
 
-function usage {
+usage() {
 	cat <<-END >&2
 	USAGE: execsnoop [-hrt] [-a argc] [-d secs] [name]
 	                 -d seconds      # trace duration, and use buffers
@@ -80,13 +80,13 @@ END
 	exit
 }
 
-function warn {
+warn() {
 	if ! eval "$@"; then
 		echo >&2 "WARNING: command failed \"$@\""
 	fi
 }
 
-function end {
+end() {
 	# disable tracing
 	echo 2>/dev/null
 	echo "Ending tracing..." 2>/dev/null
@@ -95,15 +95,15 @@ function end {
 	warn "echo 0 > events/sched/sched_process_fork/enable"
 	warn "echo -:$kname >> kprobe_events"
 	warn "echo > trace"
-	(( wroteflock )) && warn "rm $flock"
+	! [ $wroteflock -eq 0 ] && warn "rm $flock"
 }
 
-function die {
+die() {
 	echo >&2 "$@"
 	exit 1
 }
 
-function edie {
+edie() {
 	# die with a quiet end()
 	echo >&2 "$@"
 	exec >/dev/null 2>&1
@@ -122,31 +122,31 @@ do
 	h|?)	usage ;;
 	esac
 done
-shift $(( $OPTIND - 1 ))
-if (( $# )); then
+shift $(( OPTIND - 1 ))
+if ! [ $# -eq 0 ]; then
 	opt_name=1
 	name=$1
 	shift
 fi
-(( $# )) && usage
+! [ $# -eq 0 ] && usage
 
 ### option logic
-(( opt_name )) && ftext=" issued by process name \"$name\""
-(( opt_argc && argc > max_argc )) && die "ERROR: max -a argc is $max_argc."
-if (( opt_duration )); then
+! [ $opt_name -eq 0 ] && ftext=" issued by process name \"$name\""
+! [ $opt_argc -eq 0 ] && [ "$argc" -gt "$max_argc" ] && die "ERROR: max -a argc is $max_argc."
+if ! [ $opt_duration -eq 0 ]; then
 	echo "Tracing exec()s$ftext for $duration seconds (buffered)..."
 else
 	echo "Tracing exec()s$ftext. Ctrl-C to end."
 fi
 
 ### select awk
-if (( opt_duration )); then
-	[[ -x /usr/bin/mawk ]] && awk=mawk || awk=awk
+if ! [ $opt_duration -eq 0 ]; then
+	[ -x /usr/bin/mawk ] && awk=mawk || awk=awk
 else
 	# workarounds for mawk/gawk fflush behavior
-	if [[ -x /usr/bin/gawk ]]; then
+	if [ -x /usr/bin/gawk ]; then
 		awk=gawk
-	elif [[ -x /usr/bin/mawk ]]; then
+	elif [ -x /usr/bin/mawk ]; then
 		awk="mawk -W interactive"
 	else
 		awk=awk
@@ -158,27 +158,27 @@ cd $tracing || die "ERROR: accessing tracing. Root user? Kernel has FTRACE?
     debugfs mounted? (mount -t debugfs debugfs /sys/kernel/debug)"
 
 ### ftrace lock
-[[ -e $flock ]] && die "ERROR: ftrace may be in use by PID $(cat $flock) $flock"
+[ -e $flock ] && die "ERROR: ftrace may be in use by PID $(cat $flock) $flock"
 echo $$ > $flock || die "ERROR: unable to write $flock."
 wroteflock=1
 
 ### build probe
-if [[ -x /usr/bin/getconf ]]; then
+if [ -x /usr/bin/getconf ]; then
 	bits=$(getconf LONG_BIT)
 else
-	bits=64
-	[[ $(uname -m) == i* ]] && bits=32
+	mem_address=$(head -1 /proc/kallsyms | cut -f1 -d' ')
+	bits=$((  ${#mem_address} * 4 ))
 fi
-(( offset = bits / 8 ))
-function makeprobe {
+offset=$(( bits / 8 ))
+makeprobe() {
 	func=$1
 	kname=execsnoop_$func
 	kprobe="p:$kname $func"
 	i=0
-	while (( i < argc + 1 )); do
+	while [ $i -lt $(( argc + 1 )) ]; do
 		# p:kname do_execve +0(+0(%si)):string +0(+8(%si)):string ...
 		kprobe="$kprobe +0(+$(( i * offset ))(%si)):string"
-		(( i++ ))
+		i=$(( i + 1 ))
 	done
 }
 # try in this order: sys_execve, stub_execve, do_execve
@@ -186,23 +186,23 @@ makeprobe sys_execve
 
 ### setup and begin tracing
 echo nop > current_tracer
-if ! echo $kprobe >> kprobe_events 2>/dev/null; then
+if ! echo "$kprobe" >> kprobe_events 2>/dev/null; then
 	makeprobe stub_execve
-	if ! echo $kprobe >> kprobe_events 2>/dev/null; then
+	if ! echo "$kprobe" >> kprobe_events 2>/dev/null; then
 	    makeprobe do_execve
-	    if ! echo $kprobe >> kprobe_events 2>/dev/null; then
+	    if ! echo "$kprobe" >> kprobe_events 2>/dev/null; then
 		    edie "ERROR: adding a kprobe for execve. Exiting."
         fi
 	fi
 fi
-if ! echo 1 > events/kprobes/$kname/enable; then
+if ! echo 1 > "events/kprobes/$kname/enable"; then
 	edie "ERROR: enabling kprobe for execve. Exiting."
 fi
 if ! echo 1 > events/sched/sched_process_fork/enable; then
 	edie "ERROR: enabling sched:sched_process_fork tracepoint. Exiting."
 fi
 echo "Instrumenting $func"
-(( opt_time )) && printf "%-16s " "TIMEs"
+! [ $opt_time -eq 0 ] && printf "%-16s " "TIMEs"
 printf "%6s %6s %s\n" "PID" "PPID" "ARGS"
 
 #
@@ -218,15 +218,15 @@ offset=$($awk 'BEGIN { o = 0; }
 
 ### print trace buffer
 warn "echo > trace"
-( if (( opt_duration )); then
+( if ! [ $opt_duration -eq 0 ]; then
 	# wait then dump buffer
-	sleep $duration
-	cat -v trace
+	sleep "$duration"
+	cat trace
 else
 	# print buffer live
-	cat -v trace_pipe
-fi ) | $awk -v o=$offset -v opt_name=$opt_name -v name=$name \
-    -v opt_duration=$opt_duration -v opt_time=$opt_time -v kname=$kname \
+	cat trace_pipe
+fi ) | $awk -v o="$offset" -v opt_name=$opt_name -v name="$name" \
+    -v opt_duration=$opt_duration -v opt_time=$opt_time -v kname="$kname" \
     -v opt_reexec=$opt_reexec '
 	# common fields
 	$1 != "#" {

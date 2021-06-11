@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # reset-ftrace - reset state of ftrace, disabling all tracing.
 #                Written for Linux ftrace.
@@ -40,7 +40,7 @@ tracing=/sys/kernel/debug/tracing
 flock=/var/tmp/.ftrace-lock
 opt_force=0; opt_quiet=0
 
-function usage {
+usage() {
 	cat <<-END >&2
 	USAGE: reset-ftrace [-fhq]
 	                 -f              # force: delete ftrace lock file
@@ -52,35 +52,35 @@ END
 	exit
 }
 
-function warn {
+warn() {
 	if ! eval "$@"; then
 		echo >&2 "WARNING: command failed \"$@\""
 	fi
 }
 
-function die {
+die() {
 	echo >&2 "$@"
 	exit 1
 }
 
-function vecho {
-	(( opt_quiet )) && return
+vecho() {
+	! [ $opt_quiet -eq 0 ] && return
 	echo "$@"
 }
 
 # write to file
-function writefile {
+writefile() {
 	file=$1
 	string=$2	# optional
-	if [[ ! -w $file ]]; then
+	if ! [ -w "$file" ]; then
 		echo >&2 "WARNING: file $file not writable/exists. Skipping."
 		return
 	fi
 	vecho "$file, before:"
-	(( ! opt_quiet )) && cat -n $file
+	[ $opt_quiet -eq 0 ] && awk <"$file" '{ print "    " NR "\t" $0; }'
 	warn "echo $string > $file"
 	vecho "$file, after:"
-	(( ! opt_quiet )) && cat -n $file
+	[ $opt_quiet -eq 0 ] && awk <"$file" '{ print "    " NR "\t" $0; }'
 	vecho
 }
 
@@ -93,15 +93,16 @@ do
 	h|?)	usage ;;
 	esac
 done
-shift $(( $OPTIND - 1 ))
+shift $(( OPTIND - 1 ))
 
 ### ftrace lock
-if [[ -e $flock ]]; then
-	if (( opt_force )); then
+if [ -e $flock ]; then
+	if [ $opt_force -eq 0 ]; then
 		warn rm $flock
 	else
-		echo -e >&2 "ERROR: ftrace lock ($flock) exists. It shows" \
-		    "ftrace may be in use by PID $(cat $flock).\nDouble check" \
+		echo >&2 "ERROR: ftrace lock ($flock) exists. It shows" \
+		    "ftrace may be in use by PID $(cat $flock).
+		    Double check" \
 		    "to see if that PID is still active. If not, consider" \
 		    "using -f to force a reset. Exiting."
 		exit 1

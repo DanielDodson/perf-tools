@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # funccount - count kernel function calls matching specified wildcards.
 #             Uses Linux ftrace.
@@ -45,7 +45,7 @@ opt_duration=0; duration=; opt_interval=0; interval=999999; opt_timestamp=0
 opt_tail=0; tcmd=cat; ttext=
 trap 'quit=1' INT QUIT TERM PIPE HUP	# sends execution to end tracing section
 
-function usage {
+usage() {
 	cat <<-END >&2
 	USAGE: funccount [-hT] [-i secs] [-d secs] [-t top] funcstring
 	                 -d seconds      # total duration of trace
@@ -65,13 +65,13 @@ END
 	exit
 }
 
-function warn {
+warn() {
 	if ! eval "$@"; then
 		echo >&2 "WARNING: command failed \"$@\""
 	fi
 }
 
-function die {
+die() {
 	echo >&2 "$@"
 	exit 1
 }
@@ -87,28 +87,28 @@ do
 	h|?)	usage ;;
 	esac
 done
-shift $(( $OPTIND - 1 ))
+shift $(( OPTIND - 1 ))
 
 ### option logic
-(( $# == 0 )) && usage
+[ $# -eq 0 ] && usage
 funcs="$1"
-if (( opt_tail )); then
+if ! [ $opt_tail -eq 0 ]; then
 	tcmd="tail -$tnum"
 	ttext=" Top $tnum only."
 fi
-if (( opt_duration )); then
+if ! [ $opt_duration -eq 0 ]; then
 	echo "Tracing \"$funcs\" for $duration seconds.$ttext.."
 else
 	echo "Tracing \"$funcs\".$ttext.. Ctrl-C to end."
 fi
-(( opt_duration && !opt_interval )) && interval=$duration
+! [ $opt_duration -eq 0 ] && [ $opt_interval -eq 0 ] && interval=$duration
 
 ### check permissions
 cd $tracing || die "ERROR: accessing tracing. Root user? Kernel has FTRACE?
     debugfs mounted? (mount -t debugfs debugfs /sys/kernel/debug)"
 
 ### enable tracing
-sysctl -q kernel.ftrace_enabled=1	# doesn't set exit status
+echo 1 > /proc/sys/kernel/ftrace_enabled	# doesn't set exit status
 echo "$funcs" > set_ftrace_filter || die "ERROR: enabling \"$funcs\". Exiting."
 warn "echo nop > current_tracer"
 if ! echo 1 > function_profile_enabled; then
@@ -119,14 +119,14 @@ fi
 
 ### summarize
 quit=0; secs=0
-while (( !quit && (!opt_duration || secs < duration) )); do
-	(( secs += interval ))
+while [ $quit -eq 0 ] && [ $opt_duration -eq 0 ] || [ $secs -lt "$duration" ]; do
+	secs=$(( secs + interval ))
 	echo 0 > function_profile_enabled
 	echo 1 > function_profile_enabled
-	sleep $interval
+	sleep "$interval"
 
 	echo
-	(( opt_timestamp )) && date
+	! [ $opt_timestamp -eq 0 ] && date
 	printf "%-30s %8s\n" "FUNC" "COUNT"
 
 	cat trace_stat/function* | awk '

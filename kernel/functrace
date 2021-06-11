@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # functrace - trace kernel function calls matching specified wildcards.
 #             Uses Linux ftrace.
@@ -63,7 +63,7 @@ opt_duration=0; duration=; opt_pid=0; pid=; opt_tid=0; tid=; pidtext=
 opt_headers=0
 trap ':' INT QUIT TERM PIPE HUP	# sends execution to end tracing section
 
-function usage {
+usage() {
 	cat <<-END >&2
 	USAGE: functrace [-hH] [-p PID] [-L TID] [-d secs] funcstring
 	                 -d seconds      # trace duration, and use buffers
@@ -83,30 +83,30 @@ END
 	exit
 }
 
-function warn {
+warn() {
 	if ! eval "$@"; then
 		echo >&2 "WARNING: command failed \"$@\""
 	fi
 }
 
-function end {
+end() {
 	# disable tracing
 	echo 2>/dev/null
 	echo "Ending tracing..." 2>/dev/null
 	cd $tracing
 	warn "echo nop > current_tracer"
-	(( opt_pid || opt_tid )) && warn "echo > set_ftrace_pid"
+	! [ $opt_pid -eq 0 ] || ! [ $opt_tid -eq 0 ] && warn "echo > set_ftrace_pid"
 	warn "echo > set_ftrace_filter"
 	warn "echo > trace"
-	(( wroteflock )) && warn "rm $flock"
+	! [ "$wroteflock" -eq 0 ] && warn "rm $flock"
 }
 
-function die {
+die() {
 	echo >&2 "$@"
 	exit 1
 }
 
-function edie {
+edie() {
 	# die with a quiet end()
 	echo >&2 "$@"
 	exec >/dev/null 2>&1
@@ -125,15 +125,15 @@ do
 	h|?)	usage ;;
 	esac
 done
-shift $(( $OPTIND - 1 ))
+shift $(( OPTIND - 1 ))
 
 ### option logic
-(( $# == 0 )) && usage
-(( opt_pid && opt_tid )) && edie "ERROR: You can use -p or -L but not both."
+[ $# -eq 0 ] && usage
+! [ $opt_pid -eq 0 ] && ! [ $opt_tid -eq 0 ] && edie "ERROR: You can use -p or -L but not both."
 funcs="$1"
-(( opt_pid )) && pidtext=" for PID $pid"
-(( opt_tid )) && pidtext=" for TID $pid"
-if (( opt_duration )); then
+! [ $opt_pid -eq 0 ] && pidtext=" for PID $pid"
+! [ $opt_tid -eq 0 ] && pidtext=" for TID $pid"
+if ! [ $opt_duration -eq 0 ]; then
 	echo "Tracing \"$funcs\"$pidtext for $duration seconds..."
 else
 	echo "Tracing \"$funcs\"$pidtext... Ctrl-C to end."
@@ -144,25 +144,25 @@ cd $tracing || die "ERROR: accessing tracing. Root user? Kernel has FTRACE?
     debugfs mounted? (mount -t debugfs debugfs /sys/kernel/debug)"
 
 ### ftrace lock
-[[ -e $flock ]] && die "ERROR: ftrace may be in use by PID $(cat $flock) $flock"
+[ -e $flock ] && die "ERROR: ftrace may be in use by PID $(cat $flock) $flock"
 echo $$ > $flock || die "ERROR: unable to write $flock."
 wroteflock=1
 
 ### setup and commence tracing
-sysctl -q kernel.ftrace_enabled=1	# doesn't set exit status
-read mode < current_tracer
-[[ "$mode" != "nop" ]] && edie "ERROR: ftrace active (current_tracer=$mode)"
-if (( opt_pid )); then
+echo 1 > /proc/sys/kernel/ftrace_enabled      # doesn't set exit status
+read -r mode < current_tracer
+[ "$mode" != "nop" ] && edie "ERROR: ftrace active (current_tracer=$mode)"
+if ! [ $opt_pid -eq 0 ]; then
     echo > set_ftrace_pid
     # ftrace expects kernel pids, which are thread ids
     for tid in /proc/$pid/task/*; do
-        if ! echo ${tid##*/} >> set_ftrace_pid; then
+        if ! echo "$tid" | cut -d/ -f3 >> set_ftrace_pid; then
             edie "ERROR: setting -p $pid (PID exist?). Exiting."
         fi
     done
 fi
-if (( opt_tid )); then
-    if ! echo $tid > set_ftrace_pid; then
+if ! [ $opt_tid -eq 0 ]; then
+    if ! echo "$tid" > set_ftrace_pid; then
         edie "ERROR: setting -L $tid (TID exist?). Exiting."
     fi
 fi
@@ -175,16 +175,16 @@ fi
 
 ### print trace buffer
 warn "echo > trace"
-if (( opt_duration )); then
-	sleep $duration
-	if (( opt_headers )); then
+if ! [ $opt_duration -eq 0 ]; then
+	sleep "$duration"
+	if ! [ $opt_headers -eq 0 ]; then
 		cat trace
 	else
 		grep -v '^#' trace
 	fi
 else
 	# trace_pipe lack headers, so fetch them from trace
-	(( opt_headers )) && cat trace
+	! [ $opt_headers -eq 0 ] && cat trace
 	cat trace_pipe
 fi
 

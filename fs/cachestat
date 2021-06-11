@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # cachestat - show Linux page cache hit/miss statistics.
 #             Uses Linux ftrace.
@@ -58,7 +58,7 @@ tracing=/sys/kernel/debug/tracing
 interval=1; opt_timestamp=0; opt_debug=0
 trap 'quit=1' INT QUIT TERM PIPE HUP	# sends execution to end tracing section
 
-function usage {
+usage() {
 	cat <<-END >&2
 	USAGE: cachestat [-Dht] [interval]
 	                 -D              # print debug counters
@@ -74,13 +74,13 @@ END
 	exit
 }
 
-function warn {
+warn() {
 	if ! eval "$@"; then
 		echo >&2 "WARNING: command failed \"$@\""
 	fi
 }
 
-function die {
+die() {
 	echo >&2 "$@"
 	exit 1
 }
@@ -94,10 +94,10 @@ do
 	h|?)	usage ;;
 	esac
 done
-shift $(( $OPTIND - 1 ))
+shift $(( OPTIND - 1 ))
 
 ### option logic
-if (( $# )); then
+if ! [ $# -eq 0 ]; then
 	interval=$1
 fi
 echo "Counting cache functions... Output every $interval seconds."
@@ -107,7 +107,7 @@ cd $tracing || die "ERROR: accessing tracing. Root user? Kernel has FTRACE?
     debugfs mounted? (mount -t debugfs debugfs /sys/kernel/debug)"
 
 ### enable tracing
-sysctl -q kernel.ftrace_enabled=1	# doesn't set exit status
+echo 1 > /proc/sys/kernel/ftrace_enabled	# doesn't set exit status
 printf "mark_page_accessed\nmark_buffer_dirty\nadd_to_page_cache_lru\naccount_page_dirtied\n" > set_ftrace_filter || \
     die "ERROR: tracing these four kernel functions: mark_page_accessed,"\
     "mark_buffer_dirty, add_to_page_cache_lru and account_page_dirtied (unknown kernel version?). Exiting."
@@ -117,22 +117,22 @@ if ! echo 1 > function_profile_enabled; then
 	die "ERROR: enabling function profiling. Have CONFIG_FUNCTION_PROFILER? Exiting."
 fi
 
-(( opt_timestamp )) && printf "%-8s " TIME
+! [ $opt_timestamp -eq 0 ] && printf "%-8s " TIME
 printf "%8s %8s %8s %8s %12s %10s" HITS MISSES DIRTIES RATIO "BUFFERS_MB" "CACHE_MB"
-(( opt_debug )) && printf "  DEBUG"
+! [ $opt_debug -eq 0 ] && printf "  DEBUG"
 echo
 
 ### summarize
 quit=0
-while (( !quit )); do
+while [ $quit -eq 0 ]; do
 	echo 0 > function_profile_enabled
 	echo 1 > function_profile_enabled
-	sleep $interval
+	sleep "$interval"
 
-	(( opt_timestamp )) && printf "%(%H:%M:%S)T " -1
+	! [ $opt_timestamp -eq 0 ] && timestamp="$(date +%H:%M:%S) "
 
 	# cat both meminfo and trace stats, and let awk pick them apart
-	cat /proc/meminfo trace_stat/function* | awk -v debug=$opt_debug '
+	cat /proc/meminfo trace_stat/function* | awk -v debug=$opt_debug -v timestamp="$timestamp" '
 	# match meminfo stats:
 	$1 == "Buffers:" && $3 == "kB" { buffers_mb = $2 / 1024 }
 	$1 == "Cached:" && $3 == "kB" { cached_mb = $2 / 1024 }
@@ -151,7 +151,7 @@ while (( !quit )); do
 		hits = total - misses
 
 		ratio = 100 * hits / total
-		printf "%8d %8d %8d %7.1f%% %12.0f %10.0f", hits, misses, mbd,
+		printf "%s%8d %8d %8d %7.1f%% %12.0f %10.0f", timestamp, hits, misses, mbd,
 		    ratio, buffers_mb, cached_mb
 		if (debug)
 			printf "  (%d %d %d %d)", mpa, mbd, apcl, apd

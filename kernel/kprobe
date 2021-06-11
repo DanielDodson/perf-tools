@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # kprobe - trace a given kprobe definition. Kernel dynamic tracing.
 #          Written using Linux ftrace.
@@ -55,7 +55,7 @@ opt_filter=0; filter=; opt_view=0; opt_headers=0; opt_stack=0; dmesg=2
 debug=0; opt_force=0
 trap ':' INT QUIT TERM PIPE HUP	# sends execution to end tracing section
 
-function usage {
+usage() {
 	cat <<-END >&2
 	USAGE: kprobe [-FhHsv] [-d secs] [-p PID] [-L TID] kprobe_definition [filter]
 	                 -F              # force. trace despite warnings.
@@ -92,33 +92,32 @@ END
 	exit
 }
 
-function warn {
-	if ! eval "$@"; then
-		echo >&2 "WARNING: command failed \"$@\""
+warn() {
+	msg=shift
+	if ! eval "$msg"; then
+		echo >&2 "WARNING: command failed \"${msg}\""
 	fi
 }
 
-function end {
+end() {
 	# disable tracing
 	echo 2>/dev/null
 	echo "Ending tracing..." 2>/dev/null
-	cd $tracing
+	cd "$tracing"
 	warn "echo 0 > events/kprobes/$kname/enable"
-	if (( opt_filter )); then
-		warn "echo 0 > events/kprobes/$kname/filter"
-	fi
+	! [ $opt_filter -eq 0 ] && warn "echo 0 > events/kprobes/$kname/filter"
 	warn "echo -:$kname >> kprobe_events"
-	(( opt_stack )) && warn "echo 0 > options/stacktrace"
+	! [ $opt_stack -eq 0 ] && warn "echo 0 > options/stacktrace"
 	warn "echo > trace"
-	(( wroteflock )) && warn "rm $flock"
+	! [ $wroteflock -eq 0 ] && warn "rm $flock"
 }
 
-function die {
+die() {
 	echo >&2 "$@"
 	exit 1
 }
 
-function edie {
+edie() {
 	# die with a quiet end()
 	echo >&2 "$@"
 	exec >/dev/null 2>&1
@@ -140,36 +139,41 @@ do
 	h|?)	usage ;;
 	esac
 done
-shift $(( $OPTIND - 1 ))
-(( $# )) || usage
+shift $(( OPTIND - 1 ))
+[ $# -eq 0 ] && usage
 kprobe=$1
 shift
-if (( $# )); then
+if [ $# -ne 0 ]; then
 	opt_filter=1
 	filter=$1
 fi
 
 ### option logic
-(( opt_pid + opt_filter + opt_tid > 1 )) && \
+[ $(( opt_pid + opt_filter + opt_tid )) -gt 1 ] && \
 	die "ERROR: use at most one of -p, -L, or filter."
-(( opt_duration && opt_view )) && die "ERROR: use either -d or -v."
-if (( opt_pid )); then
+[ $(( opt_duration + opt_view )) -gt 1 ] && die "ERROR: use either -d or -v."
+if ! [ $opt_pid -eq 0 ]; then
 	# convert to filter
 	opt_filter=1
 	# ftrace common_pid is thread id from user's perspective
 	for tid in /proc/$pid/task/*; do
-		filter="$filter || common_pid == ${tid##*/}"
+		filter="$filter || common_pid == $(echo "$tid" | cut -d/ -f3)"
 	done
-	filter=${filter:3}  # trim leading ' || ' (four characters)
+	filter=$(echo "$filter" | cut -b 4-)  # trim leading ' || ' (four characters)
 fi
-if (( opt_tid )); then
+if ! [ $opt_tid -eq 0 ]; then
 	opt_filter=1
 	filter="common_pid == $tid"
 fi
-if [[ "$kprobe" != p:* && "$kprobe" != r:* ]]; then
+case ${kprobe} in
+	p:*|r:*)
+		# This is okay, let it pass
+		;;
+	*)
 	echo >&2 "ERROR: invalid kprobe definition (should start with p: or r:)"
+	echo "kprobe: ${kprobe}"
 	usage
-fi
+esac
 #
 # parse the following:
 # r:do_sys_open
@@ -182,15 +186,17 @@ fi
 # r:my_sys_open do_sys_open rval=$retval %ax
 # ... and examples from USAGE message
 #
-krest=${kprobe#*:}
-kname=${krest%% *}
-set -- $krest
-if [[ $2 == "" || $2 == *[=%\$]* ]]; then
+krest=$(echo "${kprobe}" | cut -d':' -f2-)
+kname=$(echo "${krest}" | cut -d' ' -f1)
+set -- "$krest"
+case $2 in
+	""|*[=%\$]*)
 	# if probe name unspecified, default to function name
-	ktype=${kprobe%%:*}
+	ktype=$(echo "${kprobe}" | cut -b1)
 	kprobe="$ktype:$kname $krest"
-fi
-if (( debug )); then
+		;;
+esac
+if ! [ $debug -eq 0 ]; then
 	echo "kname: $kname, kprobe: $kprobe"
 fi
 
@@ -201,7 +207,7 @@ cd $tracing || die "ERROR: accessing tracing. Root user? Kernel has FTRACE?
 ## check function
 set -- $kprobe
 fname=$2
-if (( !opt_force )) && ! grep -w $fname available_filter_functions >/dev/null \
+if [ $opt_force -eq 0 ] && ! grep -w "$fname" available_filter_functions >/dev/null \
     2>&1
 then
 	echo >&2 "ERROR: func $fname not in $PWD/available_filter_functions."
@@ -210,8 +216,8 @@ then
 	exit 1
 fi
 
-if (( !opt_view )); then
-	if (( opt_duration )); then
+if [ $opt_view -eq 0 ]; then
+	if ! [ $opt_duration -eq 0 ]; then
 		echo "Tracing kprobe $kname for $duration seconds (buffered)..."
 	else
 		echo "Tracing kprobe $kname. Ctrl-C to end."
@@ -219,7 +225,7 @@ if (( !opt_view )); then
 fi
 
 ### ftrace lock
-[[ -e $flock ]] && die "ERROR: ftrace may be in use by PID $(cat $flock) $flock"
+[ -e $flock ] && die "ERROR: ftrace may be in use by PID $(cat "$flock") $flock"
 echo $$ > $flock || die "ERROR: unable to write $flock."
 wroteflock=1
 
@@ -227,42 +233,42 @@ wroteflock=1
 echo nop > current_tracer
 if ! echo "$kprobe" >> kprobe_events; then
 	echo >&2 "ERROR: adding kprobe \"$kprobe\"."
-	if (( dmesg )); then
+	if ! [ $dmesg -eq 0 ]; then
 		echo >&2 "Last $dmesg dmesg entries (might contain reason):"
 		dmesg | tail -$dmesg | sed 's/^/    /'
 	fi
 	edie "Exiting."
 fi
-if (( opt_view )); then
-	cat events/kprobes/$kname/format
+if ! [ $opt_view -eq 0 ]; then
+	cat "events/kprobes/$kname/format"
 	edie ""
 fi
-if (( opt_filter )); then
-	if ! echo "$filter" > events/kprobes/$kname/filter; then
+if ! [ $opt_filter -eq 0 ]; then
+	if ! echo "$filter" > "events/kprobes/$kname/filter"; then
 		edie "ERROR: setting filter or -p. Exiting."
 	fi
 fi
-if (( opt_stack )); then
+if ! [ $opt_stack -eq 0 ]; then
 	if ! echo 1 > options/stacktrace; then
 		edie "ERROR: enabling stack traces (-s). Exiting"
 	fi
 fi
-if ! echo 1 > events/kprobes/$kname/enable; then
+if ! echo 1 > "events/kprobes/$kname/enable"; then
 	edie "ERROR: enabling kprobe $kname. Exiting."
 fi
 
 ### print trace buffer
 warn "echo > trace"
-if (( opt_duration )); then
-	sleep $duration
-	if (( opt_headers )); then
+if ! [ $opt_duration -eq 0 ]; then
+	sleep "$duration"
+	if ! [ $opt_headers -eq 0 ]; then
 		cat trace
 	else
 		grep -v '^#' trace
 	fi
 else
 	# trace_pipe lack headers, so fetch them from trace
-	(( opt_headers )) && cat trace
+	! [ $opt_headers -eq 0 ] && cat trace
 	cat trace_pipe
 fi
 

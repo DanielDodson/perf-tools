@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # syscount - count system calls.
 #            Written using Linux perf_events (aka "perf").
@@ -91,40 +91,40 @@ do
 		exit 1
 	esac
 done
-shift $(( $OPTIND - 1 ))
+shift $(( OPTIND - 1 ))
 
 ### option logic
-if (( $# > 0 )); then
+if [ $# -gt 0 ]; then
 	opt_cmd=1
 	cmd="$@"
 	cpus=
 fi
-if (( opt_pid + opt_duration + opt_cmd > 1 )); then
+if [ $(( opt_pid + opt_duration + opt_cmd )) -gt 1 ]; then
 	echo >&2 "ERROR: Pick one of {-p PID|-n name|-d seconds|command}"
 	exit 1
 fi
-if (( opt_tail )); then
+if ! [ $opt_tail -eq 0 ]; then
 	tcmd="tail -$tnum"
 	ttext=" Top $tnum only."
 fi
-if (( opt_duration )); then
+if ! [ $opt_duration -eq 0 ]; then
 	cmd="sleep $duration"
 	echo "Tracing for $duration seconds.$ttext.."
 fi
-if (( opt_pid )); then
+if ! [ $opt_pid -eq 0 ]; then
 	cpus=
 	cmd="-p $pid"
 	echo "Tracing PID $pid.$ttext.. Ctrl-C to end."
 fi
-(( opt_cmd )) && echo "Tracing while running: \"$cmd\".$ttext.."
-(( opt_pid + opt_duration + opt_cmd == 0 )) && \
+! [ $opt_cmd -eq 0 ] && echo "Tracing while running: \"$cmd\".$ttext.."
+[ $(( opt_pid + opt_duration + opt_cmd )) -eq 0 ] && \
     echo "Tracing.$ttext.. Ctrl-C to end."
-(( stdout_workaround )) && opts="-o /dev/stdout"
+! [ $stdout_workaround -eq 0 ] && opts="-o /dev/stdout"
 
 ulimit -n 32768		# often needed
 
 ### execute syscall name mode
-if (( opt_count && ! opt_verbose )); then
+if ! [ $opt_count -eq 0 ] && [ $opt_verbose -eq 0 ]; then
 	: ${cmd:=sleep 999999}
 	out=$(perf stat $opts -e 'syscalls:sys_enter_*' $cpus $cmd)
 	printf "%-17s %8s\n" "SYSCALL" "COUNT"
@@ -138,8 +138,8 @@ if (( opt_count && ! opt_verbose )); then
 fi
 
 ### execute syscall name with pid mode
-if (( opt_count && opt_verbose )); then
-	if (( write_workaround )); then
+if ! [ $opt_count -eq 0 ] && ! [ $opt_verbose -eq 0 ]; then
+	if ! [ $write_workaround -eq 0 ]; then
 		# this list must end in write to associate the filter
 		tp=$(perf list syscalls:sys_enter_* | awk '
 		    $1 != "syscalls:sys_enter_write" &&  $1 ~ /syscalls:/ { printf "-e %s ", $1 }')
@@ -166,13 +166,13 @@ fi
 
 ### execute process name mode
 tp="-e raw_syscalls:sys_enter"
-if (( write_workaround )); then
+if ! [ $write_workaround -eq 0 ]; then
 	sh -c "perf record $tp --filter 'common_pid != '\$\$ $cpus $cmd"
 else
 	perf record $tp $cpus $cmd
 fi
 
-if (( opt_verbose )); then
+if ! [ $opt_verbose -eq 0 ]; then
 	printf "%-6s %-16s %8s\n" "PID" "COMM" "COUNT"
 	perf script --fields pid,comm | awk '$1 != "#" { a[$1 ";" $2]++ }
 	END {
