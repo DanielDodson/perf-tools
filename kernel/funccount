@@ -41,7 +41,7 @@
 
 ### default variables
 tracing=/sys/kernel/debug/tracing
-opt_duration=0; duration=; opt_interval=0; interval=999999; opt_timestamp=0
+opt_duration=0; duration=0; opt_interval=0; interval=999999; opt_timestamp=0
 opt_tail=0; tcmd=cat; ttext=
 trap 'quit=1' INT QUIT TERM PIPE HUP	# sends execution to end tracing section
 
@@ -133,10 +133,32 @@ while [ $quit -eq 0 ] && [ $opt_duration -eq 0 ] || [ $secs -lt "$duration" ]; d
 	# skip headers by matching on the numeric hit column
 	$2 ~ /[0-9]/ { a[$1] += $2 }
 	END {
+		mynr=0
 		for (k in a) {
-			printf "%-30s %8d\n", k,  a[k]
+			mynr+=1
+			b[mynr]=k ""
+			s[mynr]=a[k] ""
 		}
-	}' | sort -n -k2 | $tcmd
+
+		isort(s,b,mynr);
+		for (j=1; j <= mynr; j++) {
+			printf "%-30s %8d\n", b[j],  s[j]
+		}
+	}
+
+	#insertion sort of A[1..n]
+	function isort(S, A, n, i, j) {
+	for( i=2; i<=n; i++) {
+		hs = S[j=i]
+		ha = A[j=i]
+		while (int(S[j-1]) > int(hs)) {
+			j--;
+			S[j+1] = S[j]
+			A[j+1] = A[j]
+		}
+		S[j] = hs
+		A[j] = ha
+	}}' | $tcmd
 done
 
 ### end tracing
