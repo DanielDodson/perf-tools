@@ -177,7 +177,7 @@ makeprobe() {
 	i=0
 	while [ $i -lt $(( argc + 1 )) ]; do
 		# p:kname do_execve +0(+0(%si)):string +0(+8(%si)):string ...
-		kprobe="$kprobe +0(+$(( i * offset ))(%si)):string"
+		kprobe="$kprobe +0(+$(( i * offset ))(%r1)):string"
 		i=$(( i + 1 ))
 	done
 }
