@@ -131,10 +131,7 @@ fi
 (( $# )) && usage
 
 ### option logic
-(( opt_pid && opt_name )) && die "ERROR: use either -p or -n."
-(( opt_pid )) && ftext=" issued by PID $pid"
 (( opt_name )) && ftext=" issued by process name \"$name\""
-(( opt_file )) && ftext="$ftext for filenames containing \"$file\""
 (( opt_argc && argc > max_argc )) && die "ERROR: max -a argc is $max_argc."
 if (( opt_duration )); then
 	echo "Tracing exec()s$ftext for $duration seconds (buffered)..."
