@@ -1,6 +1,20 @@
 perf-tools
 ==========
 
+# Reason for this fork
+<b>This fork allows Busybox Ash with CONFIG_ASH_GETOPTS=y to work on ARM architectures.</b>
+
+perf-tools is normally targeted at x86 architectures and requires the Bash shell because of the shell style employed. This fork is aimed at users without Bash but that are able to add 'getopts' to busybox Ash shell. Currently the following on this fork appear to work.
+<ul>
+ <li>funccount</li>
+ <li>functrace</li>
+ <li>kprobe</li>
+ <li>execsnoop</li>
+</ul>
+
+
+## Overview
+
 A miscellaneous collection of in-development and unsupported performance analysis tools for Linux ftrace and perf_events (aka the "perf" command). Both ftrace and perf are core Linux tracing tools, included in the kernel source. Your system probably has ftrace already, and perf is often just a package add (see Prerequisites).
 
 These tools are designed to be easy to install (fewest dependencies), provide advanced performance observability, and be simple to use: do one thing and do it well. This collection was created by Brendan Gregg (author of the DTraceToolkit).
